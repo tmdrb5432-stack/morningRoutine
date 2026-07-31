@@ -58,6 +58,17 @@
   .change.flat { color: var(--text-dim); }
   .empty { padding: 2.5rem 1rem; text-align: center; color: var(--text-faint); font-size: 0.9rem; }
 
+  .alerts { display: flex; flex-direction: column; gap: 0.5rem; }
+  .alert-item {
+    display: flex; align-items: baseline; gap: 0.7rem;
+    background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--accent);
+    border-radius: 8px; padding: 0.65rem 0.9rem; font-size: 0.86rem;
+  }
+  .alert-item .time { color: var(--text-faint); font-size: 0.76rem; flex-shrink: 0; }
+  .alert-item.buy { border-left-color: var(--up); }
+  .alert-item.sell { border-left-color: var(--down); }
+  .alerts-empty { color: var(--text-faint); font-size: 0.82rem; padding: 0.4rem 0.1rem; }
+
   footer { color: var(--text-faint); font-size: 0.76rem; text-align: center; }
 </style>
 </head>
@@ -85,15 +96,29 @@
       </tbody>
     </table>
 
+    <section>
+      <div class="eyebrow mono" style="margin-bottom: 0.5rem;">전략 알림</div>
+      <div class="alerts" id="alerts">
+        <div class="alerts-empty">아직 발생한 알림이 없습니다.</div>
+      </div>
+    </section>
+
     <footer id="updated"></footer>
   </div>
 
 <script>
   const POLL_MS = 3000;
   const rowsEl = document.getElementById("rows");
+  const alertsEl = document.getElementById("alerts");
   const dotEl = document.getElementById("dot");
   const statusEl = document.getElementById("status-text");
   const updatedEl = document.getElementById("updated");
+  const seenAlerts = new Set();
+  let alertsFirstLoad = true;
+
+  if ("Notification" in window && Notification.permission === "default") {
+    Notification.requestPermission();
+  }
 
   function fmtTime(ts) {
     if (!ts) return "-";
@@ -104,6 +129,38 @@
     if (sign === "1" || sign === "2") return "up";
     if (sign === "4" || sign === "5") return "down";
     return "flat";
+  }
+
+  async function tickAlerts() {
+    try {
+      const res = await fetch("/api/alerts", { cache: "no-store" });
+      if (!res.ok) return;
+      const data = await res.json();
+      const alerts = data.alerts || [];
+
+      if (alerts.length === 0) {
+        alertsEl.innerHTML = '<div class="alerts-empty">아직 발생한 알림이 없습니다.</div>';
+        return;
+      }
+
+      alertsEl.innerHTML = alerts.map((a) => {
+        const cls = a.action === "buy" ? "buy" : a.action === "sell" ? "sell" : "";
+        return `<div class="alert-item ${cls}"><span class="time mono">${fmtTime(a.fired_at)}</span><span>${a.message}</span></div>`;
+      }).join("");
+
+      for (const a of alerts) {
+        const id = a.ticker + ":" + a.type + ":" + a.fired_at;
+        if (seenAlerts.has(id)) continue;
+        seenAlerts.add(id);
+        if (alertsFirstLoad) continue; // 페이지를 새로 열었을 때 과거 알림까지 띄우지 않음
+        if ("Notification" in window && Notification.permission === "granted") {
+          new Notification("모닝루틴 매매 신호", { body: a.message });
+        }
+      }
+      alertsFirstLoad = false;
+    } catch (e) {
+      // 시세 폴링(tick)에서 이미 연결 상태를 표시하므로 여기서는 조용히 무시
+    }
   }
 
   async function tick() {
@@ -138,7 +195,9 @@
   }
 
   tick();
+  tickAlerts();
   setInterval(tick, POLL_MS);
+  setInterval(tickAlerts, POLL_MS);
 </script>
 </body>
 </html>

@@ -6,6 +6,7 @@ https://apiportal.koreainvestment.com
 import json
 import os
 import time
+from datetime import datetime, timedelta
 
 import requests
 from dotenv import load_dotenv
@@ -94,3 +95,46 @@ def get_current_price(ticker: str) -> dict:
         "sign_label": SIGN_LABEL.get(sign, ""),
         "volume": int(out.get("acml_vol", 0)),
     }
+
+
+def get_daily_candles(ticker: str, days: int = 100) -> list[dict]:
+    """국내주식 기간별(일봉) 시세 조회 (tr_id: FHKST03010100). 오래된 날짜순으로 반환."""
+    token = get_access_token()
+    end = datetime.now()
+    start = end - timedelta(days=int(days * 1.6) + 10)  # 주말/공휴일 감안한 여유분
+
+    res = requests.get(
+        f"{BASE_URL}/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice",
+        headers={
+            "authorization": f"Bearer {token}",
+            "appkey": APP_KEY,
+            "appsecret": APP_SECRET,
+            "tr_id": "FHKST03010100",
+            "custtype": "P",
+        },
+        params={
+            "FID_COND_MRKT_DIV_CODE": "J",
+            "FID_INPUT_ISCD": ticker,
+            "FID_INPUT_DATE_1": start.strftime("%Y%m%d"),
+            "FID_INPUT_DATE_2": end.strftime("%Y%m%d"),
+            "FID_PERIOD_DIV_CODE": "D",
+            "FID_ORG_ADJ_PRC": "0",
+        },
+        timeout=10,
+    )
+    res.raise_for_status()
+    body = res.json()
+    if body.get("rt_cd") != "0":
+        raise RuntimeError(f"KIS API 오류 ({ticker} 일봉): {body.get('msg1')}")
+
+    candles = [
+        {
+            "date": c["stck_bsop_date"],
+            "close": int(c["stck_clpr"]),
+            "volume": int(c["acml_vol"]),
+        }
+        for c in body.get("output2", [])
+        if c.get("stck_bsop_date")
+    ]
+    candles.sort(key=lambda c: c["date"])
+    return candles[-days:]

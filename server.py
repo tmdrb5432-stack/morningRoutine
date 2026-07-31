@@ -10,12 +10,15 @@ import os
 import re
 import threading
 import time
+from datetime import date
 from functools import wraps
 
 from dotenv import load_dotenv
 from flask import Flask, Response, jsonify, request, send_from_directory
 
-from kis_client import get_current_price
+import notifier
+import strategy
+from kis_client import get_current_price, get_daily_candles
 
 load_dotenv()
 
@@ -24,13 +27,16 @@ POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "3"))
 DASHBOARD_USER = os.getenv("DASHBOARD_USER", "")
 DASHBOARD_PASS = os.getenv("DASHBOARD_PASS", "")
 PORT = int(os.getenv("PORT", "8080"))
+CANDLE_REFRESH_SEC = 6 * 3600  # 일봉은 장중 바뀌지 않으므로 몇 시간에 한 번만 갱신
 
 KR_TICKER = re.compile(r"^\d{6}$")
 
 app = Flask(__name__, static_folder="static")
 
-state = {"prices": {}, "errors": {}, "updated_at": None}
+state = {"prices": {}, "errors": {}, "updated_at": None, "alerts": []}
 state_lock = threading.Lock()
+candle_cache: dict[str, dict] = {}  # ticker -> {"candles": [...], "fetched_at": ts}
+fired_keys: set[str] = set()  # "{ticker}:{signal_type}:{date}" 중복 알림 방지
 
 
 def load_watchlist() -> list[str]:
@@ -45,19 +51,56 @@ def load_watchlist() -> list[str]:
     return list(tickers.keys())[:20]
 
 
+def get_candles_cached(ticker: str) -> list[dict]:
+    cached = candle_cache.get(ticker)
+    if cached and time.time() - cached["fetched_at"] < CANDLE_REFRESH_SEC:
+        return cached["candles"]
+    candles = get_daily_candles(ticker, days=max(strategy.MA_LONG, strategy.RSI_PERIOD) + 20)
+    candle_cache[ticker] = {"candles": candles, "fetched_at": time.time()}
+    return candles
+
+
 def poll_loop():
     while True:
         prices, errors = {}, {}
+        new_alerts = []
+        today = date.today().isoformat()
+
         for ticker in load_watchlist():
             try:
-                prices[ticker] = get_current_price(ticker)
+                current = get_current_price(ticker)
+                prices[ticker] = current
             except Exception as e:
                 errors[ticker] = str(e)
+                continue
+
+            try:
+                candles = get_candles_cached(ticker)
+                signals = strategy.evaluate(current.get("name", ticker), ticker, candles, current)
+            except Exception as e:
+                print(f"[server] {ticker} 전략 평가 실패: {e}")
+                signals = []
+
+            for sig in signals:
+                key = f"{ticker}:{sig['type']}:{today}"
+                if key in fired_keys:
+                    continue
+                fired_keys.add(key)
+                alert = {**sig, "ticker": ticker, "fired_at": time.time()}
+                new_alerts.append(alert)
+
             time.sleep(0.2)
+
         with state_lock:
             state["prices"] = prices
             state["errors"] = errors
             state["updated_at"] = time.time()
+            if new_alerts:
+                state["alerts"] = (new_alerts + state["alerts"])[:50]
+
+        if new_alerts:
+            notifier.notify([a["message"] for a in new_alerts])
+
         time.sleep(max(POLL_INTERVAL, 1))
 
 
@@ -93,6 +136,13 @@ def api_prices():
                 "poll_interval": POLL_INTERVAL,
             }
         )
+
+
+@app.route("/api/alerts")
+@require_auth
+def api_alerts():
+    with state_lock:
+        return jsonify({"alerts": state["alerts"]})
 
 
 if __name__ == "__main__":
