@@ -15,20 +15,29 @@ if [ ! -f .env ]; then
 fi
 
 echo ""
-echo "[1/4] 유튜브 영상 목록 수집..."
+echo "[1/5] 유튜브 영상 목록 수집..."
 python fetch_videos.py
 
 echo ""
-echo "[2/4] 자막(트랜스크립트) 수집..."
+echo "[2/5] 자막(트랜스크립트) 수집..."
 python fetch_transcripts.py
 
 echo ""
-echo "[3/4] Groq AI로 종목/시장 분석..."
+echo "[3/5] Groq AI로 종목/시장 분석..."
 python analyze.py
 
 echo ""
-echo "[4/4] 투자 리포트 생성..."
+echo "[4/5] 투자 리포트 생성..."
 python report.py
+
+echo ""
+echo "[5/5] 한국투자증권 API로 실시간 시세 조회..."
+KIS_APP_KEY_SET=$(grep -E '^KIS_APP_KEY=' .env | cut -d= -f2-)
+if [ -n "$KIS_APP_KEY_SET" ] && [ "$KIS_APP_KEY_SET" != "your_kis_app_key_here" ]; then
+    python fetch_realtime.py
+else
+    echo "  (KIS_APP_KEY 미설정 - 실시간 시세 조회 건너뜀)"
+fi
 
 echo ""
 echo "======================================"
