@@ -27,10 +27,15 @@ echo "[3/4] Groq AI로 종목/시장 분석..."
 python analyze.py
 
 echo ""
-echo "[4/4] 투자 리포트 생성..."
+echo "[4/5] 투자 리포트 생성..."
 python report.py
+
+echo ""
+echo "[5/5] NotebookLM용 신규 영상 링크 추출..."
+python notebooklm_sources.py
 
 echo ""
 echo "======================================"
 echo " 완료! data/investment_report.md 확인"
+echo " 신규 영상 링크: data/notebooklm_new_links.txt"
 echo "======================================"
