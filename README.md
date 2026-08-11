@@ -43,9 +43,10 @@ NotebookLM(notebook.google.com)은 개인 계정용 공개 API가 없어서 자�
 
 ### 방법 B. 그날그날 새로 올라오는 영상만 추가
 
-`notebooklm_sources.py`는 직전 실행 이후 새로 올라온 영상의 **YouTube 링크만** 날짜/제목과
-함께 `data/notebooklm_new_links.txt`에 정리합니다. 하루 1개씩 늘어나는 정도라면 소스 한도에
-바로 걸리지 않으니, 개별 링크로 편하게 추가하면 됩니다.
+`notebooklm_sources.py`는 직전 실행 이후 새로 올라온 영상의 **YouTube 링크만** 한 줄씩
+`data/notebooklm_new_links.txt`에 정리합니다(NotebookLM의 소스 추가 입력창은 URL만 받으므로
+날짜/제목 같은 텍스트는 넣지 않습니다). 하루 1개씩 늘어나는 정도라면 소스 한도에 바로
+걸리지 않으니, 개별 링크로 편하게 추가하면 됩니다.
 
 1. `run_all.sh` (또는 `python notebooklm_sources.py`)를 실행
 2. `data/notebooklm_new_links.txt` 를 열어 링크 확인
